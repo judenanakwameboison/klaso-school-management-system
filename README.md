@@ -51,10 +51,10 @@ klaso_system/
 
 ## Screenshots
 ### Login
-![Klaso login page](docs/screenshots/login.jpg)
+![Klaso login page](login.jpg)
 
 ### Fee management
-![Klaso fee management](docs/screenshots/fees.jpg)
+![Klaso fee management](fees.jpg)
 
 ## Author
 **Jude Nana Kwame Boison**, web developer in Accra, Ghana.
