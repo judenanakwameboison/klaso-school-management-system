@@ -1,0 +1,17 @@
+#Credentials
+config/db.php
+config.php
+.env
+.env.*
+
+#Editor and system files
+.vscode/
+.DS_Store
+Thumbs.md
+
+# logs and backups
+*.log
+*.bak
+
+#user uploads
+uploads/
