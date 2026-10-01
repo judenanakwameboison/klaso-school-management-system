@@ -5,28 +5,45 @@ if (session_status() == PHP_SESSION_NONE) {
 require_once "../config/auth_superadmin.php";
 require_once "../config/db.php";
 
-/* Platform-wide stats */
-$totalSchools = $conn->query("SELECT COUNT(*) FROM schools WHERE status = 'Active'")->fetchColumn();
+/* Suspend or Reactivate a school */
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_id'])) {
+
+    $school_id = (int)$_POST['toggle_id'];
+    $newStatus = $_POST['new_status'] == 'Active' ? 'Active' : 'Suspended';
+
+    $stmt = $conn->prepare("UPDATE schools SET status = ? WHERE id = ?");
+    $stmt->execute([$newStatus, $school_id]);
+
+    header("Location: schools.php?updated=1");
+    exit();
+}
+
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+$sql = "SELECT * FROM schools WHERE 1";
+$params = [];
+
+if ($search != "") {
+    $sql .= " AND (school_name LIKE ? OR school_code LIKE ?)";
+    $keyword = "%$search%";
+    $params = [$keyword, $keyword];
+}
+
+$sql .= " ORDER BY id DESC";
+
+$stmt = $conn->prepare($sql);
+$stmt->execute($params);
+$schools = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$totalResults = count($schools);
+
 $pendingApplications = $conn->query("SELECT COUNT(*) FROM school_applications WHERE status = 'Pending'")->fetchColumn();
-$suspendedSchools = $conn->query("SELECT COUNT(*) FROM schools WHERE status = 'Suspended'")->fetchColumn();
-
-$totalStudents = $conn->query("SELECT COUNT(*) FROM students")->fetchColumn();
-$totalTeachers = $conn->query("SELECT COUNT(*) FROM teachers")->fetchColumn();
-
-/* Recently approved schools */
-$recentSchools = $conn->query("
-    SELECT school_name, school_code, status, approved_at
-    FROM schools
-    ORDER BY id DESC
-    LIMIT 8
-")->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Super Admin Dashboard - Klaso</title>
+<title>Schools - Klaso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -81,7 +98,8 @@ $recentSchools = $conn->query("
   }
   .sidebar nav a.active .dot{ background:var(--g-400); box-shadow:0 0 8px var(--g-400); }
   .badge-count{
-    margin-left:auto; background:var(--g-500); color:#fff; font-size:10.5px; font-weight:800;
+    margin-left:auto; background:var(--g-500); color:#fff; font-size:10.
+    5px; font-weight:800;
     padding:2px 7px; border-radius:20px; font-family:'IBM Plex Mono', monospace;
   }
   .sidebar-foot{
@@ -104,20 +122,39 @@ $recentSchools = $conn->query("
     padding-bottom:20px; border-bottom:2px solid var(--g-800);
   }
 
-  .stat-grid{ display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; margin:24px 0 32px; }
-  .stat{
-    background:var(--white); border:1.5px solid var(--line); border-top:4px solid var(--g-500);
-    border-radius:12px; padding:20px 20px 18px; box-shadow:0 4px 16px rgba(11,61,31,0.06);
-    transition:.2s ease;
+  .banner-success{
+    background:var(--g-100); border:1.5px solid #BFE7CC; color:var(--g-700);
+    padding:14px 18px; border-radius:10px; margin:20px 0;
+    display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600;
   }
-  .stat:hover{ transform:translateY(-3px); box-shadow:0 14px 28px rgba(11,61,31,0.14); }
-  .stat .label{ font-size:10.5px; letter-spacing:1.1px; text-transform:uppercase; color:var(--slate); margin-bottom:12px; font-weight:700; }
-  .stat .value{ font-family:'IBM Plex Mono', monospace; font-size:26px; font-weight:700; color:var(--g-800); line-height:1.1; }
-  .stat.attention{ border-top-color:#B42318; }
-  .stat.attention .value{ color:#B42318; }
 
-  .section-title{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px; }
-  .section-title h2{ font-family:'Fraunces', serif; font-size:18px; font-weight:700; color:var(--g-800); }
+  .toolbar{
+    display:flex; justify-content:space-between; align-items:center;
+    margin:22px 0; flex-wrap:wrap; gap:14px;
+  }
+  .search-box{ display:flex; gap:10px; }
+  .search-box input{
+    width:320px; padding:11px 14px; font-size:13.5px;
+    background:var(--g-100); border:1.5px solid var(--line); border-radius:8px;
+    font-family:'Inter', sans-serif; color:var(--ink);
+  }
+  .search-box input:focus{
+    outline:none; border-color:var(--g-500); background:#fff;
+    box-shadow:0 0 0 3px rgba(31,162,76,0.15);
+  }
+  .search-box button{
+    padding:11px 18px; font-size:13px; font-weight:700;
+    background:var(--g-700); color:#fff; border:none; border-radius:8px; cursor:pointer;
+    transition:.15s ease;
+  }
+  .search-box button:hover{ background:var(--g-800); }
+  .reset-link{
+    padding:11px 18px; font-size:13px; font-weight:700;
+    background:var(--g-100); color:var(--g-800); border:1.5px solid var(--line); border-radius:8px;
+  }
+  .reset-link:hover{ background:var(--line); }
+  .result-count{ font-size:12px; color:var(--slate); font-family:'IBM Plex Mono', monospace; }
+  .result-count strong{ color:var(--g-700); }
 
   .table-card{
     background:var(--white); border:1.5px solid var(--line); border-radius:12px;
@@ -129,10 +166,12 @@ $recentSchools = $conn->query("
     color:#fff; padding:14px 18px; font-size:10.5px; letter-spacing:1.1px;
     text-transform:uppercase; font-weight:700; text-align:left;
   }
+  th:last-child{ text-align:center; }
   td{
     padding:12px 18px; border-bottom:1px solid var(--line); font-size:13px;
     vertical-align:middle; color:var(--ink);
   }
+  td:last-child{ text-align:center; }
   tbody tr:hover{ background:var(--g-100); }
   tbody tr:last-child td{ border-bottom:none; }
 
@@ -147,22 +186,25 @@ $recentSchools = $conn->query("
   .status-active::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--g-500); }
   .status-suspended{ background:#FDEDED; color:#B42318; border:1px solid #F3B8B8; }
   .status-suspended::before{ content:''; width:6px; height:6px; border-radius:50%; background:#B42318; }
-  .status-pending{ background:#FFF7E0; color:#8A6300; border:1px solid #F3E3AC; }
-  .status-pending::before{ content:''; width:6px; height:6px; border-radius:50%; background:#F3C744; }
 
-  .empty-state{ text-align:center; padding:50px 20px; }
-  .empty-state h3{ font-family:'Fraunces', serif; font-size:16px; color:var(--slate); font-weight:600; }
+  .row-btn{
+    padding:7px 14px; font-size:11.5px; font-weight:700; border-radius:6px;
+    border:none; cursor:pointer; transition:.15s ease; font-family:'Inter', sans-serif;
+  }
+  .btn-suspend{ background:#FDEDED; color:#B42318; border:1px solid #F3B8B8; }
+  .btn-suspend:hover{ background:#DC3545; color:#fff; border-color:#DC3545; }
+  .btn-activate{ background:var(--g-100); color:var(--g-700); border:1px solid #BFE7CC; }
+  .btn-activate:hover{ background:var(--g-600); color:#fff; border-color:var(--g-600); }
+
+  .empty-state{ text-align:center; padding:60px 20px; }
+  .empty-state h3{ font-family:'Fraunces', serif; font-size:17px; color:var(--slate); font-weight:600; }
   .empty-state p{ font-size:12.5px; color:var(--slate-light); margin-top:6px; }
 
-  @media (max-width:1100px){
-    .stat-grid{ grid-template-columns:repeat(3, 1fr); }
-  }
   @media (max-width:980px){
     .sidebar{ display:none; }
     .main{ margin-left:0; padding:24px; }
-    .stat-grid{ grid-template-columns:repeat(2, 1fr); }
     .table-card{ overflow-x:auto; }
-    table{ min-width:600px; }
+    table{ min-width:700px; }
   }
 </style>
 </head>
@@ -179,12 +221,12 @@ $recentSchools = $conn->query("
 
   <div class="nav-group-label">Platform</div>
   <nav>
-    <a href="dashboard.php" class="active"><span class="dot"></span>Dashboard</a>
+    <a href="dashboard.php"><span class="dot"></span>Dashboard</a>
     <a href="review_applications.php">
       <span class="dot"></span>Applications
       <?php if($pendingApplications > 0){ ?><span class="badge-count"><?php echo $pendingApplications; ?></span><?php } ?>
     </a>
-    <a href="schools.php"><span class="dot"></span>Schools</a>
+    <a href="schools.php" class="active"><span class="dot"></span>Schools</a>
   </nav>
 
   <div class="sidebar-foot">
@@ -196,34 +238,20 @@ $recentSchools = $conn->query("
 
   <div class="page-head">
     <div class="eyebrow">Klaso Platform</div>
-    <h1>Super Admin Dashboard</h1>
+    <h1>Schools</h1>
   </div>
 
-  <div class="stat-grid">
-    <div class="stat">
-      <div class="label">Active Schools</div>
-      <div class="value"><?php echo $totalSchools; ?></div>
-    </div>
-    <div class="stat <?php echo $pendingApplications > 0 ? 'attention' : ''; ?>">
-      <div class="label">Pending Applications</div>
-      <div class="value"><?php echo $pendingApplications; ?></div>
-    </div>
-    <div class="stat">
-      <div class="label">Suspended Schools</div>
-      <div class="value"><?php echo $suspendedSchools; ?></div>
-    </div>
-    <div class="stat">
-      <div class="label">Total Students</div>
-      <div class="value"><?php echo $totalStudents; ?></div>
-    </div>
-    <div class="stat">
-      <div class="label">Total Teachers</div>
-      <div class="value"><?php echo $totalTeachers; ?></div>
-    </div>
-  </div>
+  <?php if(isset($_GET['updated'])){ ?>
+    <div class="banner-success">School status updated.</div>
+  <?php } ?>
 
-  <div class="section-title">
-    <h2>Recently Onboarded Schools</h2>
+  <div class="toolbar">
+    <form method="GET" class="search-box">
+      <input type="text" name="search" placeholder="Search by school name or code..." value="<?php echo htmlspecialchars($search); ?>">
+      <button type="submit">Search</button>
+      <a href="schools.php" class="reset-link">Reset</a>
+    </form>
+    <div class="result-count"><strong><?php echo $totalResults; ?></strong> school<?php echo $totalResults != 1 ? 's' : ''; ?> found</div>
   </div>
 
   <div class="table-card">
@@ -232,33 +260,49 @@ $recentSchools = $conn->query("
         <tr>
           <th>School Name</th>
           <th>Code</th>
+          <th>Contact Email</th>
           <th>Status</th>
           <th>Approved</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        <?php if(count($recentSchools) > 0){ ?>
-          <?php foreach($recentSchools as $s){ ?>
+        <?php if(count($schools) > 0){ ?>
+          <?php foreach($schools as $s){ ?>
             <tr>
               <td><span class="school-name"><?php echo htmlspecialchars($s['school_name']); ?></span></td>
               <td class="mono"><?php echo htmlspecialchars($s['school_code']); ?></td>
+              <td><?php echo htmlspecialchars($s['contact_email']); ?></td>
               <td>
                 <?php if($s['status'] == 'Active'){ ?>
                   <span class="status-pill status-active">Active</span>
-                <?php }elseif($s['status'] == 'Suspended'){ ?>
-                  <span class="status-pill status-suspended">Suspended</span>
                 <?php }else{ ?>
-                  <span class="status-pill status-pending">Pending</span>
+                  <span class="status-pill status-suspended">Suspended</span>
                 <?php } ?>
               </td>
               <td><?php echo $s['approved_at'] ? htmlspecialchars($s['approved_at']) : '&mdash;'; ?></td>
+              <td>
+                <?php if($s['status'] == 'Active'){ ?>
+                  <form method="POST" onsubmit="return confirm('Suspend this school? Their admin, teachers, and students will be unable to log in.');">
+                    <input type="hidden" name="toggle_id" value="<?php echo $s['id']; ?>">
+                    <input type="hidden" name="new_status" value="Suspended">
+                    <button type="submit" class="row-btn btn-suspend">Suspend</button>
+                  </form>
+                <?php }else{ ?>
+                  <form method="POST" onsubmit="return confirm('Reactivate this school?');">
+                    <input type="hidden" name="toggle_id" value="<?php echo $s['id']; ?>">
+                    <input type="hidden" name="new_status" value="Active">
+                    <button type="submit" class="row-btn btn-activate">Reactivate</button>
+                  </form>
+                <?php } ?>
+              </td>
             </tr>
-          <?php } ?>
+            <?php } ?>
         <?php }else{ ?>
           <tr>
-            <td colspan="4">
+            <td colspan="6">
               <div class="empty-state">
-                <h3>No schools onboarded yet</h3>
+                <h3>No schools yet</h3>
                 <p>Approved schools will appear here.</p>
               </div>
             </td>
